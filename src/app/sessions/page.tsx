@@ -38,24 +38,28 @@ export default async function SessionsPage() {
           <p className="text-sm text-zinc-500">No sessions yet.</p>
         ) : (
           <ul className="divide-y divide-white/5 rounded-md border border-white/10">
-            {sessions.map((s) => (
-              <li key={s.id}>
-                <Link
-                  href={`/sessions/${s.id}`}
-                  className="flex items-center justify-between px-4 py-3 text-sm hover:bg-white/[0.03]"
-                >
-                  <div>
-                    <p className="text-zinc-100">{s.title ?? "Untitled session"}</p>
-                    <p className="text-xs text-zinc-500">
-                      {new Date(s.started_at).toLocaleString()} · {s.status}
-                    </p>
-                  </div>
-                  <span className="text-xs text-zinc-500">
-                    {s.duration_ms ? `${Math.round(s.duration_ms / 60000)} min` : "—"}
-                  </span>
-                </Link>
-              </li>
-            ))}
+            {sessions.map((s) => {
+              const href =
+                s.status === "ended" ? `/sessions/${s.id}/review` : `/sessions/${s.id}`;
+              return (
+                <li key={s.id}>
+                  <Link
+                    href={href}
+                    className="flex items-center justify-between px-4 py-3 text-sm hover:bg-white/[0.03]"
+                  >
+                    <div>
+                      <p className="text-zinc-100">{s.title ?? "Untitled session"}</p>
+                      <p className="text-xs text-zinc-500">
+                        {new Date(s.started_at).toLocaleString()} · {s.status}
+                      </p>
+                    </div>
+                    <span className="text-xs text-zinc-500">
+                      {s.duration_ms ? `${Math.round(s.duration_ms / 60000)} min` : "—"}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { AudioSource } from "@/lib/types";
+import { checkCanStartSession } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 
@@ -23,6 +24,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid_body", issues: parsed.error.flatten() }, { status: 400 });
   }
 
+  const speakerCount = parsed.data.speaker_count ?? 1;
+  const ent = await checkCanStartSession({ userId: user.id, speakerCount });
+  if (!ent.ok) {
+    return NextResponse.json(
+      { error: ent.code, reason: ent.reason, plan: ent.plan },
+      { status: 402 },
+    );
+  }
+
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("sessions")
@@ -30,7 +40,7 @@ export async function POST(req: NextRequest) {
       user_id: user.id,
       title: parsed.data.title ?? null,
       audio_source: parsed.data.audio_source ?? "browser_mic",
-      speaker_count: parsed.data.speaker_count ?? 1,
+      speaker_count: speakerCount,
       sensitivity: parsed.data.sensitivity ?? 70,
     })
     .select("*")

@@ -30,6 +30,7 @@ export const env = {
 
   // Perplexity
   perplexityApiKey: () => need("PERPLEXITY_API_KEY"),
+  perplexityApiKeyOptional: () => optional("PERPLEXITY_API_KEY"),
   perplexityModel: () => optional("PERPLEXITY_MODEL") ?? "sonar",
 
   // Tunables

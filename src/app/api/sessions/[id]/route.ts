@@ -44,7 +44,18 @@ export async function PATCH(req: NextRequest, ctx: RouteContext<"/api/sessions/[
   const supabase = await createClient();
   const patch: Record<string, unknown> = { ...parsed.data };
   if (parsed.data.status === "ended" || parsed.data.status === "failed") {
-    patch.ended_at = new Date().toISOString();
+    const endedAt = new Date();
+    patch.ended_at = endedAt.toISOString();
+    // Compute duration from started_at — read it cheaply via RLS.
+    const { data: existing } = await supabase
+      .from("sessions")
+      .select("started_at")
+      .eq("id", id)
+      .single();
+    if (existing?.started_at) {
+      const started = new Date(existing.started_at).getTime();
+      patch.duration_ms = Math.max(0, endedAt.getTime() - started);
+    }
   }
 
   const { data, error } = await supabase

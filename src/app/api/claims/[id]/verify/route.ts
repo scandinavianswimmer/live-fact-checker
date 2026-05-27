@@ -44,6 +44,35 @@ export async function POST(
   const service = createServiceClient();
   await service.from("claims").update({ status: "verifying" }).eq("id", id);
 
+  // Graceful degrade: if Perplexity isn't configured yet, emit an "unverified"
+  // verdict with confidence 0 so the UI surfaces the claim with an actionable
+  // explanation instead of silently 502-ing the request.
+  if (!process.env.PERPLEXITY_API_KEY) {
+    const { data: verdict, error: insertErr } = await service
+      .from("verdicts")
+      .insert({
+        claim_id: id,
+        session_id: claim.session_id,
+        verdict: "unverified",
+        confidence: 0,
+        summary:
+          "Verification source not configured. Add PERPLEXITY_API_KEY to enable live source lookups.",
+        sources: [],
+        raw_sonar: null,
+        latency_ms: Date.now() - t0,
+      })
+      .select("*")
+      .single();
+    if (insertErr) {
+      return NextResponse.json(
+        { error: "verdict_insert_failed", detail: insertErr.message },
+        { status: 500 },
+      );
+    }
+    await service.from("claims").update({ status: "verified" }).eq("id", id);
+    return NextResponse.json({ verdict, degraded: "perplexity_missing" });
+  }
+
   let sonar;
   try {
     sonar = await sonarVerify({ claim: claim.assertion, context: claim.context });

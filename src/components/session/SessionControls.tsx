@@ -1,10 +1,12 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { Mic, Pause, Play, Square, VolumeX, Volume2 } from "lucide-react";
 import { useSessionStore } from "@/lib/session-store";
 import { cn } from "@/lib/utils";
 
 export function SessionControls({ sessionId }: { sessionId: string }) {
+  const router = useRouter();
   const mode = useSessionStore((s) => s.mode);
   const pauseSession = useSessionStore((s) => s.pauseSession);
   const resumeSession = useSessionStore((s) => s.resumeSession);
@@ -63,9 +65,10 @@ export function SessionControls({ sessionId }: { sessionId: string }) {
       )}
       {(mode === "live" || mode === "paused") && (
         <button
-          onClick={() => {
+          onClick={async () => {
             endSession();
-            patch({ status: "ended" });
+            await patch({ status: "ended" });
+            router.push(`/sessions/${sessionId}/review`);
           }}
           className="inline-flex items-center gap-1 rounded border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs text-rose-200 hover:bg-rose-500/20"
         >
