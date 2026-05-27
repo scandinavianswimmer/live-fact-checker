@@ -53,7 +53,7 @@ After RLS is on, enable Realtime on `claims` and `verdicts` (Supabase dashboard 
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | **Yes** |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser-safe anon key | **Yes** |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only key for API-route inserts | **Yes** |
-| `DEEPGRAM_API_KEY` | Master key — server mints 60s JWTs for the browser | **Yes** |
+| `DEEPGRAM_API_KEY` | Master key — server mints 60s JWTs for the browser (must have **Member** role; default USAGE keys cannot grant tokens) | **Yes** |
 | `ANTHROPIC_API_KEY` | Claim Detector + Verdict Scorer (Haiku) | **Yes** |
 | `ANTHROPIC_HAIKU_MODEL` | Override model id (default `claude-haiku-4-5-20251001`) | No |
 | `PERPLEXITY_API_KEY` | Verification engine | **Yes** |
