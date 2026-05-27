@@ -1,39 +1,52 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { DeepgramClient } from "@deepgram/sdk";
-import type { listen } from "@deepgram/sdk";
 import { useSessionStore } from "@/lib/session-store";
 import type { TranscriptChunkInput } from "@/lib/types";
 
-type ListenMessage =
-  | listen.ListenV1Results
-  | listen.ListenV1Metadata
-  | listen.ListenV1UtteranceEnd
-  | listen.ListenV1SpeechStarted;
-
 /**
- * Captures the user's mic in the browser, streams it over WebSocket directly
- * to Deepgram (using a short-lived JWT minted by /api/deepgram/token), and
- * surfaces:
+ * Captures the user's mic in the browser, streams it over a raw WebSocket
+ * directly to Deepgram (using a short-lived JWT minted by /api/deepgram/token
+ * and passed via the documented `['token', jwt]` subprotocol — browsers
+ * cannot pass an `Authorization` header on a WebSocket, so the SDK's
+ * header-based auth does not work in the browser).
+ *
+ * Per-chunk flow:
  *   - interim transcripts → store.partial (rendered in TranscriptPane)
  *   - finalized chunks   → store.pushChunk + POST /api/transcripts (server
  *     storage so the claim detector has authoritative data)
  *
- * Also drives the claim detector tick — every LFC_CLAIM_TICK_SECONDS we POST
- * /api/claims/detect for the session, and for every newly returned claim we
- * fire /api/claims/:id/verify in parallel.
+ * Side loop: every TICK_SECONDS the browser POSTs /api/claims/detect for the
+ * session, and for every newly returned claim fires /api/claims/:id/verify in
+ * parallel. Verdicts arrive via Supabase Realtime in CardFeed.
  */
 const TICK_SECONDS = 5;
+const DEEPGRAM_WS_URL = "wss://api.deepgram.com/v1/listen";
 
-type LiveSocket = Awaited<ReturnType<DeepgramClient["listen"]["v1"]["connect"]>>;
+interface DeepgramAlternative {
+  transcript: string;
+  confidence?: number;
+  words?: Array<{ speaker?: number }>;
+}
+interface DeepgramResultsMessage {
+  type: "Results";
+  is_final?: boolean;
+  start: number;
+  duration: number;
+  channel?: { alternatives?: DeepgramAlternative[] };
+}
+type DeepgramMessage =
+  | DeepgramResultsMessage
+  | { type: "Metadata" | "UtteranceEnd" | "SpeechStarted"; [k: string]: unknown };
 
 export function MicCapture({
   sessionId,
   speakerCount,
+  onError,
 }: {
   sessionId: string;
   speakerCount: number;
+  onError?: (kind: ErrorKind, detail?: string) => void;
 }) {
   const mode = useSessionStore((s) => s.mode);
   const setPartial = useSessionStore((s) => s.setPartial);
@@ -41,7 +54,7 @@ export function MicCapture({
   const startedAtMs = useSessionStore((s) => s.startedAtMs);
   const factCheckMuted = useSessionStore((s) => s.factCheckMuted);
 
-  const liveRef = useRef<LiveSocket | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -54,64 +67,86 @@ export function MicCapture({
     let cancelled = false;
 
     (async () => {
-      // 1. Mint Deepgram token
-      const tokenRes = await fetch("/api/deepgram/token", { method: "POST" });
-      if (!tokenRes.ok) {
-        console.error("Deepgram token failed", await tokenRes.text());
+      // 1. Mint Deepgram JWT (60s TTL) from our backend
+      let token: string;
+      try {
+        const tokenRes = await fetch("/api/deepgram/token", { method: "POST" });
+        if (!tokenRes.ok) {
+          onError?.("token", `HTTP ${tokenRes.status}: ${(await tokenRes.text()).slice(0, 200)}`);
+          return;
+        }
+        ({ token } = (await tokenRes.json()) as { token: string });
+      } catch (err) {
+        onError?.("token", (err as Error).message);
         return;
       }
-      const { token } = (await tokenRes.json()) as { token: string };
       if (cancelled) return;
 
-      // 2. Open Deepgram WebSocket using the JWT as Bearer auth.
-      // We construct a no-auth DeepgramClient and pass Authorization explicitly
-      // — the SDK requires an apiKey at construct time even though we're
-      // overriding the header for WS.
-      const dg = new DeepgramClient({ apiKey: token });
-      const live = await dg.listen.v1.connect({
-        model: "nova-3",
-        smart_format: "true",
-        punctuate: "true",
-        interim_results: "true",
-        diarize: speakerCount > 1 ? "true" : "false",
-        utterance_end_ms: "1000",
-        endpointing: "300",
-        Authorization: `Bearer ${token}`,
-      });
-      liveRef.current = live;
-
-      live.on("open", async () => {
-        // 3. Acquire mic and pipe blobs into the WS
-        const stream = await navigator.mediaDevices.getUserMedia({
+      // 2. Acquire mic with a clear, actionable error if denied
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
             noiseSuppression: true,
             channelCount: 1,
           },
         });
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        streamRef.current = stream;
+      } catch (err) {
+        onError?.("mic_denied", (err as Error).message);
+        return;
+      }
+      if (cancelled) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      streamRef.current = stream;
 
+      // 3. Build the Deepgram URL with query params and connect via subprotocol auth
+      const params = new URLSearchParams({
+        model: "nova-3",
+        smart_format: "true",
+        punctuate: "true",
+        interim_results: "true",
+        utterance_end_ms: "1000",
+        endpointing: "300",
+        language: "en-US",
+      });
+      if (speakerCount > 1) params.set("diarize", "true");
+
+      const ws = new WebSocket(`${DEEPGRAM_WS_URL}?${params.toString()}`, [
+        "token",
+        token,
+      ]);
+      ws.binaryType = "arraybuffer";
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        // 4. Start recording — fires ondataavailable every 250ms
         const mime = pickSupportedMime();
-        const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+        const recorder = new MediaRecorder(
+          stream,
+          mime ? { mimeType: mime } : undefined,
+        );
         recorderRef.current = recorder;
         recorder.ondataavailable = (e) => {
-          if (e.data.size > 0) {
-            try {
-              live.sendMedia(e.data);
-            } catch {
-              // socket may not be open yet on the very first chunk
-            }
+          if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+            ws.send(e.data);
           }
         };
+        recorder.onerror = (e) => {
+          onError?.("recorder", String((e as Event & { error?: Error }).error ?? "MediaRecorder error"));
+        };
         recorder.start(250);
-      });
+      };
 
-      live.on("message", (raw) => {
-        const msg = raw as ListenMessage;
+      ws.onmessage = (evt) => {
+        let msg: DeepgramMessage;
+        try {
+          msg = JSON.parse(typeof evt.data === "string" ? evt.data : "") as DeepgramMessage;
+        } catch {
+          return;
+        }
         if (msg.type !== "Results") return;
         const alt = msg.channel?.alternatives?.[0];
         if (!alt) return;
@@ -150,20 +185,22 @@ export function MicCapture({
 
         pendingFinalsRef.current.push(chunk);
         scheduleFlush();
-      });
+      };
 
-      live.on("close", () => {
-        liveRef.current = null;
-      });
-      live.on("error", (err: Error) => {
-        console.error("Deepgram error", err);
-      });
+      ws.onerror = () => {
+        onError?.("ws", "Deepgram WebSocket error");
+      };
 
-      live.connect();
-      await live.waitForOpen();
+      ws.onclose = (e) => {
+        // Code 1000 = clean close. Anything else while we're still in "live"
+        // mode means the connection dropped unexpectedly.
+        if (e.code !== 1000 && !cancelled) {
+          onError?.("ws_closed", `code=${e.code} reason=${e.reason || "(none)"}`);
+        }
+      };
     })();
 
-    // 4. Claim detector tick — every 5s, ask the server to scan the window
+    // 5. Claim detector tick — every 5s, ask the server to scan the window
     tickRef.current = setInterval(async () => {
       if (factCheckMuted) return;
       try {
@@ -177,8 +214,8 @@ export function MicCapture({
         for (const c of json.claims ?? []) {
           fetch(`/api/claims/${c.id}/verify`, { method: "POST" }).catch(() => undefined);
         }
-      } catch (err) {
-        console.warn("detect tick failed", err);
+      } catch {
+        // Transient — next tick retries
       }
     }, TICK_SECONDS * 1000);
 
@@ -186,16 +223,20 @@ export function MicCapture({
       cancelled = true;
       if (tickRef.current) clearInterval(tickRef.current);
       if (flushRef.current) clearTimeout(flushRef.current);
-      recorderRef.current?.stop();
+      try {
+        recorderRef.current?.stop();
+      } catch {
+        // ignore
+      }
       streamRef.current?.getTracks().forEach((t) => t.stop());
       try {
-        liveRef.current?.close();
+        wsRef.current?.close(1000);
       } catch {
-        // already closed
+        // ignore
       }
-      liveRef.current = null;
+      wsRef.current = null;
     };
-  }, [mode, sessionId, startedAtMs, speakerCount, factCheckMuted, pushChunk, setPartial]);
+  }, [mode, sessionId, startedAtMs, speakerCount, factCheckMuted, pushChunk, setPartial, onError]);
 
   function scheduleFlush() {
     if (flushRef.current) return;
@@ -209,14 +250,21 @@ export function MicCapture({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chunks: batch }),
         });
-      } catch (err) {
-        console.warn("transcript flush failed", err);
+      } catch {
+        // Lost chunk — acceptable; next final reconciles on the server
       }
     }, 800);
   }
 
   return null;
 }
+
+export type ErrorKind =
+  | "token"
+  | "mic_denied"
+  | "ws"
+  | "ws_closed"
+  | "recorder";
 
 function pickSupportedMime(): string | null {
   const candidates = [

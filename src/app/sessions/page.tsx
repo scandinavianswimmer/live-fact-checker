@@ -16,6 +16,11 @@ export default async function SessionsPage() {
     .order("started_at", { ascending: false })
     .limit(50);
 
+  const criticalMissing: string[] = [];
+  if (!process.env.DEEPGRAM_API_KEY) criticalMissing.push("Deepgram");
+  if (!process.env.ANTHROPIC_API_KEY) criticalMissing.push("Anthropic");
+  const canStartSession = criticalMissing.length === 0;
+
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-12">
       <header className="mb-8 flex items-end justify-between">
@@ -29,7 +34,15 @@ export default async function SessionsPage() {
 
       <section className="mb-10 rounded-md border border-white/10 bg-white/[0.02] p-5">
         <h2 className="mb-3 text-sm font-medium text-zinc-200">Start a new session</h2>
-        <NewSessionForm />
+        {canStartSession ? (
+          <NewSessionForm />
+        ) : (
+          <p className="text-sm text-amber-200">
+            Sessions are disabled until the following keys are set in the server
+            env: <strong>{criticalMissing.join(", ")}</strong>. The session would
+            silently fail without them.
+          </p>
+        )}
       </section>
 
       <section>

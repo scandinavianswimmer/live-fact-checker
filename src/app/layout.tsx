@@ -14,10 +14,40 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+
 export const metadata: Metadata = {
-  title: "Live Fact-Checking Assistant",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "Live Fact-Check — Verify claims at conversation speed",
+    template: "%s · Live Fact-Check",
+  },
   description:
-    "Real-time AI co-pilot for podcasters, news anchors, and live hosts. Listens, extracts claims, verifies in under 3 seconds.",
+    "Real-time AI co-pilot for podcasters, news hosts, and live broadcasters. Listens to your conversation, extracts fact-checkable claims, and surfaces verified verdicts with citations in under three seconds.",
+  applicationName: "Live Fact-Check",
+  keywords: [
+    "podcast fact-check",
+    "live fact-check",
+    "real-time transcription",
+    "podcast research",
+    "Deepgram",
+    "Perplexity Sonar",
+    "Claude Haiku",
+  ],
+  openGraph: {
+    title: "Live Fact-Check — Verify claims at conversation speed",
+    description:
+      "Real-time AI co-pilot for podcasters, news hosts, and live broadcasters. Sub-3-second claim → verdict latency, with source citations.",
+    url: SITE_URL,
+    siteName: "Live Fact-Check",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Live Fact-Check — Verify claims at conversation speed",
+    description:
+      "Real-time AI co-pilot for podcasters and live broadcasters. Sub-3-second claim → verdict.",
+  },
 };
 
 export default function RootLayout({
