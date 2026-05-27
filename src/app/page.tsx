@@ -1,65 +1,55 @@
-import Image from "next/image";
+import Link from "next/link";
 
-export default function Home() {
+export default function Landing() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-6 py-24">
+      <p className="mb-3 text-xs uppercase tracking-[0.2em] text-emerald-400">
+        Live Fact-Checking Assistant
+      </p>
+      <h1 className="mb-5 text-5xl font-semibold tracking-tight">
+        Verify claims at conversation speed.
+      </h1>
+      <p className="mb-8 max-w-xl text-lg text-zinc-400">
+        A real-time AI co-pilot for podcasters, debate moderators, and live
+        hosts. We listen, extract fact-checkable claims, and surface verified
+        verdicts with citations in under three seconds.
+      </p>
+      <div className="flex gap-3">
+        <Link
+          href="/sessions"
+          className="rounded-md bg-emerald-500 px-5 py-2.5 text-sm font-medium text-emerald-950 hover:bg-emerald-400"
+        >
+          Start a session
+        </Link>
+        <Link
+          href="/sessions"
+          className="rounded-md border border-white/15 px-5 py-2.5 text-sm font-medium text-zinc-200 hover:bg-white/5"
+        >
+          See past sessions
+        </Link>
+      </div>
+      <div className="mt-16 grid grid-cols-3 gap-6 text-sm text-zinc-400">
+        <Tile title="Sub-3s verdicts">
+          Deepgram Nova-3 streaming → Claude Haiku claim extraction → Perplexity
+          Sonar verification.
+        </Tile>
+        <Tile title="Silence beats wrong">
+          Confidence threshold of 70 by default. Below that, we stay silent.
+        </Tile>
+        <Tile title="Bring your own audio">
+          Browser mic, virtual audio device (Riverside, Zoom, StreamYard), or
+          file upload.
+        </Tile>
+      </div>
+    </main>
+  );
+}
+
+function Tile({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-md border border-white/10 bg-white/[0.02] p-4">
+      <p className="mb-1 text-sm font-medium text-zinc-100">{title}</p>
+      <p>{children}</p>
     </div>
   );
 }
